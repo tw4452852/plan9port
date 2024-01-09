@@ -774,6 +774,14 @@ texttype(Text *t, Rune r)
 	 	typecommit(t);
 		undo(t, nil, nil, FALSE, 0, nil, 0);
 		return;
+	case 0x12:      /* ^r: Get */
+		typecommit(t);
+		get(t, nil, nil, FALSE, 0, nil, 0);
+		return;
+	case 0x13:      /* ^s: Put */
+		typecommit(t);
+		put(t, nil, nil, FALSE, 0, nil, 0);
+		return;
 
 	Tagdown:
 		/* expand tag to show all text */
@@ -837,7 +845,7 @@ texttype(Text *t, Rune r)
 			return;
 		nr = runestrlen(rp);
 		break;	/* fall through to normal insertion case */
-	case 0x1B:
+	case 0x1B:  /* Esc */
 		if(t->eq0 != ~0) {
 			if(t->eq0 <= t->q0)
 				textsetselect(t, t->eq0, t->q0);
