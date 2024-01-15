@@ -789,6 +789,10 @@ texttype(Text *t, Rune r)
 		t->w->tag.q1 = t->w->tag.file->b.nc;
 		moveto(mousectl, addpt(frptofchar(&t->w->tag.fr, t->w->tag.file->b.nc), Pt(4, t->w->tag.fr.font->height-2)));
 		return;
+	case 0xd:       /* ^m: maximize current win */
+		typecommit(t);
+		colgrow(t->col, t->w, 2);
+		return;
 
 	Tagdown:
 		/* expand tag to show all text */
