@@ -783,7 +783,7 @@ texttype(Text *t, Rune r)
 		typecommit(t);
 		put(t, nil, nil, FALSE, 0, nil, 0);
 		return;
-	case 0xd:      /* ^m: Move cursor to end of tagline */
+	case 0x14:      /* ^t: Move cursor to end of tagline */
 		typecommit(t);
 		t->w->tag.q0 = t->w->tag.file->b.nc;
 		t->w->tag.q1 = t->w->tag.file->b.nc;
