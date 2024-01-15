@@ -783,6 +783,12 @@ texttype(Text *t, Rune r)
 		typecommit(t);
 		put(t, nil, nil, FALSE, 0, nil, 0);
 		return;
+	case 0xd:      /* ^m: Move cursor to end of tagline */
+		typecommit(t);
+		t->w->tag.q0 = t->w->tag.file->b.nc;
+		t->w->tag.q1 = t->w->tag.file->b.nc;
+		moveto(mousectl, addpt(frptofchar(&t->w->tag.fr, t->w->tag.file->b.nc), Pt(4, t->w->tag.fr.font->height-2)));
+		return;
 
 	Tagdown:
 		/* expand tag to show all text */
