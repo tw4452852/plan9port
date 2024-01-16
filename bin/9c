@@ -26,6 +26,10 @@ usegcc()
 	# that option only works with gcc3+ it seems
 	cflags="$cflags -ggdb"
 	cflags="$cflags $CC9FLAGS"
+
+	case "$cc" in
+	*clang*)	cflags="$cflags -MJ $$.o.json" ;;
+	esac
 }
 
 quiet()
@@ -83,6 +87,10 @@ useclang()
 	"
 	cflags="$cflags -g"
 	cflags="$cflags $CC9FLAGS"
+
+	case "$cc" in
+	*clang*)	cflags="$cflags -MJ $$.o.json" ;;
+	esac
 }
 
 usexlc()
