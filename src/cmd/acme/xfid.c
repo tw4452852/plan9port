@@ -333,6 +333,15 @@ xfidread(Xfid *x)
 	case QWbody:
 		xfidutfread(x, &w->body, w->body.file->b.nc, QWbody);
 		break;
+	case QWenvs:
+		n = 0;
+		buf[0] = 0;
+		Env *env = w->envs;
+		while(env) {
+			n += sprint(buf+n, "%s=%s\n", env->name, env->value);
+			env = env->next;
+		}
+		goto Readbuf;
 
 	case QWctl:
 		b = winctlprint(w, buf, 1);
@@ -820,6 +829,25 @@ out:
 			wincleartag(w);
 			settag = TRUE;
 			m = 8;
+		}else if(strncmp(p, "add_env ", 8) == 0){
+			pp = p+8;
+			m = 8;
+			q = memchr(pp, '\n', e-pp);
+			if(q==nil || q==pp){
+				err = Ebadctl;
+				break;
+			}
+			*q = 0;
+
+			char *eq = memchr(pp, '=', q-pp);
+			if(eq==nil || eq==pp){
+				err = Ebadctl;
+				break;
+			}
+			*eq = 0;
+			winaddenv(w, pp, eq+1);
+
+			m += (q+1) - pp;
 		}else{
 			err = Ebadctl;
 			break;

@@ -23,6 +23,7 @@ wininit(Window *w, Window *clone, Rectangle r)
 	Rune *rp;
 	int nc;
 
+	w->envs = nil;
 	w->tag.w = w;
 	w->taglines = 1;
 	w->tagexpand = TRUE;
@@ -329,6 +330,20 @@ winclose(Window *w)
 			free(w->incl[i]);
 		free(w->incl);
 		free(w->events);
+		if (w->envs) {
+			Env *cur = w->envs;
+			Env *nxt = cur->next;
+			while (cur != nil) {
+				free(cur->name);
+				free(cur->value);
+				free(cur);
+
+				cur = nxt;
+				if (cur != nil)
+					nxt = cur->next;
+			}
+			w->envs = nil;
+		}
 		free(w);
 	}
 }
@@ -689,6 +704,7 @@ winctlprint(Window *w, char *buf, int fonts)
 {
 	sprint(buf, "%11d %11d %11d %11d %11d ", w->id, w->tag.file->b.nc,
 		w->body.file->b.nc, w->isdir, w->dirty);
+
 	if(fonts)
 		return smprint("%s%11d %q %11d %11d %11d ", buf, Dx(w->body.fr.r),
 			w->body.reffont->f->name, w->body.fr.maxtab, seqof(w, 1) != 0, seqof(w, 0) != 0);
@@ -722,5 +738,22 @@ winevent(Window *w, char *fmt, ...)
 	if(x){
 		w->eventx = nil;
 		sendp(x->c, nil);
+	}
+}
+
+void
+winaddenv(Window *w, char *name, char *value)
+{
+	Env *env = emalloc(sizeof(Env));
+	env->name = estrdup(name);
+	env->value = estrdup(value);
+	if (w->envs == nil) {
+		w->envs = env;
+	} else {
+		Env *cur = w->envs;
+		while (cur->next != nil) {
+			cur = cur->next;
+		}
+		cur->next = env;
 	}
 }
