@@ -168,6 +168,12 @@ if $dobuild; then
 		cp $PLAN9/bin/quote1 $PLAN9/bin/'"'
 		cp $PLAN9/bin/quote2 $PLAN9/bin/'""'
 	fi
+
+	files=`find . -name '*.o.json'`
+	if [ -n "$files" ]; then
+		echo "* Generating compile_commands.json..."
+		sed -e '1s/^/[\n/' -e '$s/,$/\n]/' $files > compile_commands.json
+	fi
 	echo "* Cleaning up..."
 	mk clean
 fi
