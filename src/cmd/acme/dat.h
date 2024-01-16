@@ -22,6 +22,7 @@ enum
 	QWwrsel,
 	QWtag,
 	QWxdata,
+	QWenvs,
 	QMAX
 };
 
@@ -55,6 +56,14 @@ typedef	struct	Text Text;
 typedef	struct	Timer Timer;
 typedef	struct	Window Window;
 typedef	struct	Xfid Xfid;
+typedef struct  Env Env;
+
+struct Env
+{
+	char *name;
+	char *value;
+	Env  *next;
+};
 
 struct Runestr
 {
@@ -274,6 +283,7 @@ struct Window
 	int		taglines;
 	Rectangle	tagtop;
 	QLock	editoutlk;
+	Env 	*envs;
 };
 
 void	wininit(Window*, Window*, Rectangle);
@@ -296,6 +306,7 @@ void	winmousebut(Window*);
 void	winaddincl(Window*, Rune*, int);
 void	wincleartag(Window*);
 char	*winctlprint(Window*, char*, int);
+void	winaddenv(Window*, char*, char*);
 
 struct Column
 {

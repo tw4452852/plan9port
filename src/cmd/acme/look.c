@@ -265,7 +265,20 @@ plumblook(Plumbmsg *m)
 		e.agetc = plumbgetc;
 	}
 	drawtopwindow();
-	openfile(nil, &e);
+	Window *w = openfile(nil, &e);
+	char *envs = plumblookup(m->attr, "envs");
+	if (w->envs == nil && envs != nil) {
+		char *name = strtok(envs, ":");
+		char *value;
+		while (name != nil) {
+			value = strtok(nil, ":");
+			if (value == nil)
+				break;
+
+			winaddenv(w, name, value);
+			name = strtok(nil, ":");
+		}
+	}
 	free(e.name);
 	free(e.u.at);
 }
@@ -870,6 +883,9 @@ openfile(Text *t, Expand *e)
 				winaddincl(w, rp, n);
 			}
 			w->autoindent = ow->autoindent;
+			for (Env *env = ow->envs; env != nil; env = env->next) {
+				winaddenv(w, env->name, env->value);
+			}
 		}else
 			w->autoindent = globalautoindent;
 		xfidlog(w, "new");
