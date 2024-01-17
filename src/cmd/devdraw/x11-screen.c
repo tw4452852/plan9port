@@ -431,7 +431,8 @@ runxevent(XEvent *xev)
 		shift = 0;
 		if(_x.kstate & ShiftMask)
 			shift = 5;
-		gfx_mousetrack(w->client, m.xy.x, m.xy.y, (m.buttons|_x.kbuttons)<<shift, m.msec);
+		int mod = !!(_x.kstate & (ControlMask|Mod1Mask));
+		gfx_mousetrack(w->client, m.xy.x, m.xy.y, ((m.buttons|_x.kbuttons)<<shift)|(mod << 16), m.msec);
 		break;
 
 	case KeyRelease:
