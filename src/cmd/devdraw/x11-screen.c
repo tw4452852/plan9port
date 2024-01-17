@@ -427,7 +427,8 @@ runxevent(XEvent *xev)
 	case MotionNotify:
 		if(_xtoplan9mouse(w, xev, &m) < 0)
 			return;
-		gfx_mousetrack(w->client, m.xy.x, m.xy.y, m.buttons|_x.kbuttons, m.msec);
+		int mod = !!(_x.kstate & (ControlMask|Mod1Mask));
+		gfx_mousetrack(w->client, m.xy.x, m.xy.y, m.buttons|_x.kbuttons|(mod << 16), m.msec);
 		break;
 
 	case KeyRelease:
