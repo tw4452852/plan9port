@@ -37,6 +37,25 @@ enum{
 };
 Rune	snarfrune[NSnarf+1];
 
+static char *menu2str[] = {
+	"current_line",
+	"als_def",
+	"als_refs",
+	"als_restart",
+	"als_impls",
+	"d",
+	"gb",
+	"gf",
+	nil
+};
+
+
+static Menu menu2 =
+{
+	menu2str
+};
+
+
 char		*fontnames[2] =
 {
 	"/lib/font/bit/lucsans/euro.8.font",
@@ -660,8 +679,25 @@ mousethread(void *v)
 					if(t->w!=nil && t==&t->w->body)
 						activewin = t->w;
 				}else if(m.buttons & 2){
-					if(textselect2(t, &q0, &q1, &argt))
-						execute(t, q0, q1, FALSE, argt);
+					if (m.buttons & (1<<16)) { // modifier pressed
+						int menu = menuhit(2, mousectl, &menu2, nil);
+						if(menu != -1){
+							Runestr dir = dirname(t, nil, 0);
+							if(dir.nr==1 && dir.r[0]=='.'){	/* sigh */
+								free(dir.r);
+								dir.r = nil;
+								dir.nr = 0;
+							}
+							char *cmd = emalloc(strlen(menu2str[menu])+1);
+							sprint(cmd, "%s", menu2str[menu]);
+							if(t->w)
+								incref(&t->w->ref);
+							run(t->w, cmd, dir.r, dir.nr, TRUE, nil, nil, FALSE);
+						}
+					} else {
+						if(textselect2(t, &q0, &q1, &argt))
+							execute(t, q0, q1, FALSE, argt);
+					}
 				}else if(m.buttons & (4|(4<<Shift))){
 					if(textselect3(t, &q0, &q1))
 						look3(t, q0, q1, FALSE, (m.buttons&(4<<Shift))!=0);
