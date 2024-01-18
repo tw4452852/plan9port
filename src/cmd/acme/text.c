@@ -793,6 +793,9 @@ texttype(Text *t, Rune r)
 		typecommit(t);
 		colgrow(t->col, t->w, 2);
 		return;
+	case 0x4:		/* skip ^d */
+		typecommit(t);
+		return;
 
 	Tagdown:
 		/* expand tag to show all text */
