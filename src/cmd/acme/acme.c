@@ -503,6 +503,11 @@ keyboardthread(void *v)
 		casekeyboard:
 			typetext = rowtype(&row, r, mouse->xy);
 			t = typetext;
+			if (r == 0x4 && t != nil && t->w != nil && t->w->col != nil && winclean(t->w, TRUE)) { // ^d: Del window
+				colclose(t->w->col, t->w, TRUE);
+				t->w = nil;
+			}
+
 			if(t!=nil && t->col!=nil && !(r==Kdown || r==Kleft || r==Kright))	/* scrolling doesn't change activecol */
 				activecol = t->col;
 			if(t!=nil && t->w!=nil)
