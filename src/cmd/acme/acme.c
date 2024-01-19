@@ -504,8 +504,16 @@ keyboardthread(void *v)
 			typetext = rowtype(&row, r, mouse->xy);
 			t = typetext;
 			if (r == 0x4 && t != nil && t->w != nil && t->w->col != nil && winclean(t->w, TRUE)) { // ^d: Del window
-				colclose(t->w->col, t->w, TRUE);
-				t->w = nil;
+				if (t->w->nopen[QWevent]>0) {
+					winlock(t->w, 'M');
+					extern int delrunepos(Window *w);
+					int n = delrunepos(t->w);
+					winevent(t->w, "x%d %d 1 3 Del\n", n, n);
+					winunlock(t->w);
+				} else {
+					colclose(t->w->col, t->w, TRUE);
+					t->w = nil;
+				}
 			}
 
 			if(t!=nil && t->col!=nil && !(r==Kdown || r==Kleft || r==Kright))	/* scrolling doesn't change activecol */
