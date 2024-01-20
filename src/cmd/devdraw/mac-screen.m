@@ -697,7 +697,7 @@ rpc_resizewindow(Client *c, Rectangle r)
 		m = [e modifierFlags];
 		if(m & NSEventModifierFlagOption){
 			gfx_abortcompose(self.client);
-			b = 2;
+			b = 2 | (1 << 16);
 		}else
 		if(m & NSEventModifierFlagCommand)
 			b = 4;
