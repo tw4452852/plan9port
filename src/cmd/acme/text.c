@@ -793,7 +793,7 @@ texttype(Text *t, Rune r)
 		typecommit(t);
 		colgrow(t->col, t->w, 2);
 		return;
-	case 0x4:		/* skip ^d */
+	case 0x11:               /* skip ^q */
 		typecommit(t);
 		return;
 
