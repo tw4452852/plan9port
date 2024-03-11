@@ -503,7 +503,7 @@ keyboardthread(void *v)
 		casekeyboard:
 			typetext = rowtype(&row, r, mouse->xy);
 			t = typetext;
-			if (r == 0x4 && t != nil && t->w != nil && t->w->col != nil && winclean(t->w, TRUE)) { // ^d: Del window
+			if (r == 0x11 && t != nil && t->w != nil && t->w->col != nil && winclean(t->w, TRUE)) { // ^q: Del window
 				if (t->w->nopen[QWevent]>0) {
 					winlock(t->w, 'M');
 					extern int delrunepos(Window *w);
