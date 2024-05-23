@@ -187,7 +187,7 @@ threadmain(int argc, char **argv)
 	char *p;
 	int lfd;
 
-	p = "300x40@100,100";
+	p = "600x40@100,100";
 
 	ARGBEGIN{
 	case 'W':
