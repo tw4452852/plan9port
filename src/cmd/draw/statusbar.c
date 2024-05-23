@@ -231,3 +231,9 @@ threadmain(int argc, char **argv)
 	}
 	proccreate(updateproc, nil, STACK);
 }
+
+int
+threadmaybackground(void)
+{
+	return 1;
+}
