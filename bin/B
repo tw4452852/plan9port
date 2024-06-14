@@ -37,7 +37,7 @@ then
 	do
 		i="$i$line"
 		i=`cleanname -d "$pwd" "$i"`
-		plumb -s B -d edit "$i"
+		plumb -s B -d edit -a "max=1" "$i"
 	done
 else
 	for i
