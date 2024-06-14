@@ -279,6 +279,9 @@ plumblook(Plumbmsg *m)
 			name = strtok(nil, ":");
 		}
 	}
+	if (plumblookup(m->attr, "max")) {
+		colgrow(w->col, w, 2);
+	}
 	free(e.name);
 	free(e.u.at);
 }
