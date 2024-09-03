@@ -522,7 +522,7 @@ keyboardthread(void *v)
 				t->w->body.file->curtext = &t->w->body;
 			if(timer != nil)
 				timercancel(timer);
-			if(t!=nil && t->what==Tag) {
+			if(t!=nil && t->what==Tag && t->w!=nil) {
 				timer = timerstart(500);
 				alts[KTimer].c = timer->c;
 				alts[KTimer].op = CHANRCV;
