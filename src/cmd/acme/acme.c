@@ -513,6 +513,15 @@ keyboardthread(void *v)
 				} else {
 					colclose(t->w->col, t->w, TRUE);
 					t->w = nil;
+					// find the current window and focus on it
+					qlock(&row.lk);
+					t = rowwhich(&row, mouse->xy);
+					if (t!=nil && t->w!=nil) {
+						xfidlog(t->w, "focus");
+					}
+					qunlock(&row.lk);
+					// restore
+					t = typetext;
 				}
 			}
 
