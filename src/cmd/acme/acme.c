@@ -46,6 +46,7 @@ static char *menu2str[] = {
 	"d",
 	"gb",
 	"gf",
+	">def",
 	nil
 };
 
