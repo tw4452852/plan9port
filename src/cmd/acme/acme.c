@@ -38,15 +38,16 @@ enum{
 Rune	snarfrune[NSnarf+1];
 
 static char *menu2str[] = {
-	"current_line",
+	">grg",
 	"als_def",
 	"als_refs",
 	"als_restart",
 	"als_impls",
 	"d",
-	"gb",
 	"gf",
 	">def",
+	"current_line",
+	"gb",
 	nil
 };
 
