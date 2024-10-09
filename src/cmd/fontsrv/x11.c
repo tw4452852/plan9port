@@ -3,6 +3,8 @@
 #include <fontconfig/fontconfig.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_PARAMETER_TAGS_H
+#include FT_MODULE_H
 
 #include <libc.h>
 #include <draw.h>
@@ -19,6 +21,10 @@ loadfonts(void)
 	int i;
 	FT_Error e;
 	FcFontSet *sysfonts;
+	FT_Int      darken_params[8] = {  500, 475,   // x1, y1
+                                   1000, 400,   // x2, y2
+                                   1500, 400,   // x3, y3
+                                   2333,   0 }; // x4, y4
 
 	if(!FcInit() || (fc=FcInitLoadConfigAndFonts()) == NULL) {
 		fprint(2, "fontconfig initialization failed\n");
@@ -30,6 +36,11 @@ loadfonts(void)
 		fprint(2, "freetype initialization failed: %d\n", e);
 		exits("freetype failed");
 	}
+
+	FT_Property_Set( lib, "autofitter", "darkening-parameters", darken_params );
+	FT_Property_Set( lib, "cff", "darkening-parameters", darken_params );
+	FT_Property_Set( lib, "type1", "darkening-parameters", darken_params );
+	FT_Property_Set( lib, "t1cid", "darkening-parameters", darken_params );
 
 	sysfonts = FcConfigGetFonts(fc, FcSetSystem);
 
@@ -118,6 +129,8 @@ mksubfont(XFont *xf, char *name, int lo, int hi, int size, int antialias)
 	Fontchar *fc, *fc0;
 	Memsubfont *sf;
 	//Point rect_points[4];
+	FT_Bool stem_darkening = 1;
+	FT_Parameter param = { .tag = FT_PARAM_TAG_STEM_DARKENING, .data = &stem_darkening };
 
 	e = FT_New_Face(lib, xf->fontfile, xf->index, &face);
 	if(e){
@@ -128,6 +141,13 @@ mksubfont(XFont *xf, char *name, int lo, int hi, int size, int antialias)
 	e = FT_Set_Char_Size(face, 0, size<<6, dpi, dpi);
 	if(e){
 		fprint(2, "FT_Set_Char_Size failed\n");
+		FT_Done_Face(face);
+		return nil;
+	}
+
+	e = FT_Face_Properties(face, 1, &param);
+	if(e){
+		fprint(2, "enable stem_darkening failed\n");
 		FT_Done_Face(face);
 		return nil;
 	}
@@ -180,7 +200,7 @@ mksubfont(XFont *xf, char *name, int lo, int hi, int size, int antialias)
 		e = 1;
 		k = FT_Get_Char_Index(face, i);
 		if(k != 0) {
-			e = FT_Load_Glyph(face, k, FT_LOAD_RENDER|FT_LOAD_FORCE_AUTOHINT|(antialias ? FT_LOAD_TARGET_LIGHT:FT_LOAD_TARGET_MONO));
+			e = FT_Load_Glyph(face, k, FT_LOAD_RENDER|(antialias ? FT_LOAD_TARGET_LIGHT:FT_LOAD_TARGET_MONO));
 		}
 		if(e || face->glyph->advance.x <= 0) {
 			fc->width = 0;
