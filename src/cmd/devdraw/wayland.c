@@ -23,8 +23,8 @@
 
 // alt+click and ctl+click are mapped to mouse buttons
 // to support single button mice.
-#define ALT_BUTTON 1
-#define CTL_BUTTON 2
+#define ALT_BUTTON 2
+#define CTL_BUTTON 1
 
 struct WaylandBuffer {
 	int w;
@@ -568,7 +568,7 @@ void wl_pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t seria
 
 	qunlock(&wayland_lock);
 	DEBUG("wl_pointer_button: gfx_trackmouse(x=%d, y=%d, b=%d)\n", x, y, b);
-	gfx_mousetrack(c, x, y, b, (uint) time);
+	gfx_mousetrack(c, x, y, b|(wl->ctl << 16), (uint) time);
 }
 
 void wl_pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time,
@@ -982,6 +982,7 @@ static void rpc_setmouse(Client *c, Point p) {
 	zwp_locked_pointer_v1_destroy(lock);
 
 	qunlock(&wayland_lock);
+	//gfx_mousetrack(c, p.x, p.y, 0, 0);
 }
 
 static void rpc_topwin(Client*) {
