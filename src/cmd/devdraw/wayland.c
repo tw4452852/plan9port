@@ -44,9 +44,10 @@ struct WaylandClient {
 	int mouse_y;
 	int buttons;
 
-	// Booleans indicating whether control or alt are currently held.
+	// Booleans indicating whether control/alt/shift are currently held.
 	int ctl;
 	int alt;
+	int shift;
 
 	// State for key repeat for keyboard keys.
 	int repeat_rune;
@@ -565,10 +566,14 @@ void wl_pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t seria
 	int x = wl->mouse_x;
 	int y = wl->mouse_y;
 	int b = wl->buttons;
+	int shift = 0;
+	if (wl->shift) {
+		shift = 5;
+	}
 
 	qunlock(&wayland_lock);
 	DEBUG("wl_pointer_button: gfx_trackmouse(x=%d, y=%d, b=%d)\n", x, y, b);
-	gfx_mousetrack(c, x, y, b|(wl->ctl << 16), (uint) time);
+	gfx_mousetrack(c, x, y, (b|(wl->ctl << 16))<<shift, (uint) time);
 }
 
 void wl_pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time,
@@ -704,6 +709,14 @@ void wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
 			qunlock(&wayland_lock);
 			gfx_mousetrack(c, x, y, b, (uint) time);
 			return;
+		}
+		break;
+	case XKB_KEY_Shift_L:
+	case XKB_KEY_Shift_R:
+		if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+			wl->shift = 1;
+		} else {
+			wl->shift = 0;
 		}
 		break;
 	case XKB_KEY_Control_L:
