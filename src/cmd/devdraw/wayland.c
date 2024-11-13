@@ -980,6 +980,8 @@ static void rpc_setmouse(Client *c, Point p) {
 	zwp_locked_pointer_v1_set_cursor_position_hint(lock, x, y);
 	wl_surface_commit(wl->wl_surface);
 	zwp_locked_pointer_v1_destroy(lock);
+	wl->mouse_x = p.x;
+	wl->mouse_y = p.y;
 
 	qunlock(&wayland_lock);
 	//gfx_mousetrack(c, p.x, p.y, 0, 0);
