@@ -1093,6 +1093,7 @@ Memimage *rpc_attach(Client *c, char *label, char *winsize) {
 	wl_surface_commit(wl->wl_surface);
 
 	qunlock(&wayland_lock);
+	wl_display_roundtrip(wl_display);
 	return wl->memimage;
 }
 
