@@ -703,7 +703,7 @@ mousethread(void *v)
 					if(t->w!=nil && t==&t->w->body)
 						activewin = t->w;
 				}else if(m.buttons & 2){
-					if (m.buttons & (1<<16)) { // modifier pressed
+					if ((m.buttons & (1<<16)) && (t->what==Body)) { // modifier pressed
 						int menu = menuhit(2, mousectl, &menu2, nil);
 						if(menu != -1){
 							Runestr dir = dirname(t, nil, 0);
