@@ -638,7 +638,7 @@ mousethread(void *v)
 			but = 0;
 			if(m.buttons == 1)
 				but = 1;
-			else if(m.buttons == 2)
+			else if(m.buttons & 2)
 				but = 2;
 			else if(m.buttons == 4)
 				but = 3;
