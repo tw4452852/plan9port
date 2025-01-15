@@ -266,7 +266,7 @@ winlock(Window *w, int owner)
 
 	f = w->body.file;
 	for(i=0; i<f->ntext; i++)
-		winlock1(f->text[i]->w, owner);
+		if (f->text[i]->w!=nil) winlock1(f->text[i]->w, owner);
 }
 
 void
@@ -283,9 +283,11 @@ winunlock(Window *w)
 	f = w->body.file;
 	for(i=f->ntext-1; i>=0; i--){
 		w = f->text[i]->w;
-		w->owner = 0;
-		qunlock(&w->lk);
-		winclose(w);
+		if (w!=nil) {
+			w->owner = 0;
+			qunlock(&w->lk);
+			winclose(w);
+		}
 	}
 }
 
