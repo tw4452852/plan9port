@@ -349,17 +349,21 @@ void delete_buffer(WaylandBuffer *b) {
 }
 
 static void wl_buffer_release(void *data, struct wl_buffer *wl_buffer) {
+	qlock(&wayland_lock);
 	if (data == NULL) {
 		wl_buffer_destroy(wl_buffer);
+		qunlock(&wayland_lock);
 		return;
 	}
 	for (int i = 0; i < N_XRGB8888_BUFFERS; i++) {
 		if (xrgb8888_buffers[i] == NULL) {
 			xrgb8888_buffers[i] = (WaylandBuffer*) data;
+			qunlock(&wayland_lock);
 			return;
 		}
 	}
 	delete_buffer((WaylandBuffer*) data);
+	qunlock(&wayland_lock);
 }
 
 static const struct wl_buffer_listener wl_buffer_listener = {
