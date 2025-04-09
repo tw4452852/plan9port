@@ -22,6 +22,7 @@ char *title;
 Biobuf b;
 Image *light;
 Image *dark;
+Image *stopped;
 Image *text;
 Keyboardctl *kc;
 Mousectl *mc;
@@ -32,6 +33,7 @@ initcolor(void)
 	text = display->black;
 	light = allocimagemix(display, DPalegreen, DWhite);
 	dark = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DDarkgreen);
+	stopped = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPurpleblue);
 }
 
 Rectangle rbar;
@@ -48,6 +50,7 @@ drawbar(void)
 	int p;
 	char buf[400], bar[200];
 	static char lastbar[200];
+	static int same_cnt = 0;
 
 	if(n > d || n < 0 || d <= 0)
 		return;
@@ -78,8 +81,18 @@ drawbar(void)
 		return;
 	}
 
-	if(lastp == p && last == i)
+	if(lastp == p && last == i) {
+		if (same_cnt++ == 3) {
+			draw(screen, Rect(rbar.min.x, rbar.min.y, rbar.min.x+i, rbar.max.y),
+			stopped, nil, ZP);
+			draw(screen, Rect(rbar.min.x + i, rbar.min.y, rbar.max.x, rbar.max.y),
+			light, nil, ZP);
+			flushimage(display, 1);
+		}
 		return;
+	} else {
+		same_cnt = 0;
+	}
 
 	if(lastp != p){
 		sprint(buf, "%d%%", p);
