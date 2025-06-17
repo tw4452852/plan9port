@@ -781,6 +781,9 @@ void wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
 	case XKB_KEY_Right:
 		rune = Kright;
 		break;
+	case XKB_KEY_F1...XKB_KEY_F12:
+		rune = KF | (keysym - XKB_KEY_F1 + 1);
+		break;
 	}
 
 	qunlock(&wayland_lock);
