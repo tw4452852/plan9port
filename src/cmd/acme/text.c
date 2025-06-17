@@ -813,6 +813,28 @@ texttype(Text *t, Rune r)
 			winresize(t->w, t->w->r, FALSE, TRUE);
 		}
 		return;
+	case KF|1:
+	case 0x06:	/* ^F: search */
+	case KF|12:
+		{
+		Runestr dir = dirname(t, nil, 0);
+		if(dir.nr==1 && dir.r[0]=='.'){	/* sigh */
+			free(dir.r);
+			dir.r = nil;
+			dir.nr = 0;
+		}
+		char *cmd = emalloc(256);
+		if (r == (KF|1)) {
+			sprint(cmd, "%s", "gf");
+		} else if (r == 0x06) {
+			sprint(cmd, "%s", "foot -d error sh -c 'elvish $HOME/MyRoot/scripts/search_in_acme_window.elv'");
+		} else if (r == (KF|12)) {
+			sprint(cmd, "%s", "foot -d error sh -c 'elvish $HOME/MyRoot/scripts/select_acme_windows.elv'");
+		}
+		incref(&t->w->ref);
+		run(t->w, cmd, dir.r, dir.nr, TRUE, nil, nil, FALSE);
+		return;
+		}
 	}
 	if(t->what == Body){
 		seq++;
@@ -851,7 +873,6 @@ texttype(Text *t, Rune r)
 	}
 	textshow(t, t->q0, t->q0, 1);
 	switch(r){
-	case 0x06:	/* ^F: complete */
 	case Kins:
 		typecommit(t);
 		rp = textcomplete(t);
