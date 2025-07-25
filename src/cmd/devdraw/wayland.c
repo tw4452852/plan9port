@@ -432,12 +432,7 @@ static void wl_callback_done(void *data, struct wl_callback *wl_callback, uint32
 	WaylandClient *wl = (WaylandClient*) c->view;
 	qlock(&wayland_lock);
 
-	// Request another callback for the next frame.
-	// TODO: Only request a callback if we are still repeating a key.
 	wl_callback_destroy(wl_callback);
-	wl_callback = wl_surface_frame(wl->wl_surface);
-	wl_callback_add_listener(wl_callback, &wl_callback_listener, c);
-	wl_surface_commit(wl->wl_surface);
 
 	int repeat_rune = 0;
 	if (wl->repeat_rune && time >= wl->repeat_next_ms) {
@@ -456,6 +451,13 @@ static void wl_callback_done(void *data, struct wl_callback *wl_callback, uint32
 		} else {
 			wl->repeat_scroll_next_ms = time + scroll_repeat_ms/wl->repeat_scroll_count;
 		}
+	}
+
+	if (repeat_rune || repeat_scroll_button) {
+		// Request another callback for the next frame.
+		wl_callback = wl_surface_frame(wl->wl_surface);
+		wl_callback_add_listener(wl_callback, &wl_callback_listener, c);
+		wl_surface_commit(wl->wl_surface);
 	}
 
 	qunlock(&wayland_lock);
