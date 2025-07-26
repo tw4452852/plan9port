@@ -236,13 +236,14 @@ void wl_data_device_listener_selection(void *data,
 	close(fds[1]);
 	wl_display_roundtrip(wl_display);
 
-	qlock(&wayland_lock);
-
 	int total = 0;
-	snarf = NULL;
+	int limit = 512;
+	char *buff = malloc(limit);
+	if (!buff) {
+		sysfatal("oom");
+	}
 	for (; ;) {
-		char buf[128];
-		int n = read(fds[0], &buf, sizeof(buf));
+		int n = read(fds[0], buff+total, limit-total);
 		if (n < 0 && errno == EAGAIN) {
 			continue;
 		}
@@ -250,19 +251,27 @@ void wl_data_device_listener_selection(void *data,
 			sysfatal("Read failed");
 		}
 		if (n == 0) {
+			// ensure we're always null terminated
+			buff[total] = 0;
 			break;
 		}
-		// +1 to ensure it's always at least null terminated.
-		char *tmp = calloc(1, total + n + 1);
-		if (snarf != NULL) {
-			strncpy(tmp, snarf, total);
-		}
-		memcpy(tmp+total, buf, n);
-		total += n;
-		snarf = tmp;
-	}
 
-	DEBUG("wl_data_device_listener_selection: read [%s]\n", snarf);
+		total += n;
+		if (total >= limit-1) {
+			// double size
+			limit *= 2;
+			buff = realloc(buff, limit);
+			if (!buff) {
+				sysfatal("oom");
+			}
+		}
+	}
+	DEBUG("wl_data_device_listener_selection: read %d bytes\n", total);
+
+	// publish new snarf
+	qlock(&wayland_lock);
+	free(snarf);
+	snarf = buff;
 	qunlock(&wayland_lock);
 	close(fds[0]);
 }
@@ -315,7 +324,11 @@ void wl_data_source_send(void *data,
 	close(fd);
 }
 
-void wl_data_source_cancelled(void *data, struct wl_data_source *wl_data_source) {}
+void wl_data_source_cancelled(void *data, struct wl_data_source *wl_data_source)
+{
+	// An application has replaced the clipboard contents
+	wl_data_source_destroy(wl_data_source);
+}
 
 static const struct wl_data_source_listener wl_data_source_listener = {
 	.target = wl_data_source_target,
@@ -1090,9 +1103,7 @@ char *rpc_getsnarf(void) {
 		return NULL;
 	}
 
-	int n = strlen(snarf);
-	char *copy = calloc(1, n+1);
-	strncpy(copy, snarf, n);
+	char *copy = strdup(snarf);
 	qunlock(&wayland_lock);
 	return copy;
 }
@@ -1101,10 +1112,8 @@ void	rpc_putsnarf(char *snarf_in) {
 	DEBUG("rpc_putsnarf\n");
 	qlock(&wayland_lock);
 
-	int n = strlen(snarf_in);
 	free(snarf);
-	snarf = calloc(1, n+1);
-	strncpy(snarf, snarf_in, n);
+	snarf = strdup(snarf_in);
 
 	struct wl_data_source *source =
 		wl_data_device_manager_create_data_source(wl_data_device_manager);
