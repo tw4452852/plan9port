@@ -1,3 +1,4 @@
+#include <threads.h>
 #include <u.h>
 #include <libc.h>
 #include <draw.h>
@@ -49,28 +50,12 @@ struct WaylandClient {
 	int alt;
 	int shift;
 
-	// State for key repeat for keyboard keys.
-	int repeat_rune;
-	int repeat_next_ms;
-
-	// State for "key repeat" for the mouse scroll wheel.
-	// This allows touchpad devices to have accelerated scrolling.
-	int repeat_scroll_button;
-	int repeat_scroll_count;
-	int repeat_scroll_rate_ms;
-	int repeat_scroll_next_ms;
-
 	// The Wayland surface for this window
 	// and its corresponding xdg objects.
 	struct wl_surface *wl_surface;
 	struct xdg_surface *xdg_surface;
 	struct xdg_toplevel *xdg_toplevel;
-
-	// A callback when wl_surface is ready for the next frame.
-	// Currently this is not used for drawing,
-	// but as a hack for implementing key repeat
-	// without needing to implement our own timer thread/events.
-	struct wl_callback *wl_callback;
+	struct WaylandBuffer *current_buffer;
 
 	// The mouse pointer and the surface for the current cursor.
 	struct wl_pointer *wl_pointer;
@@ -113,23 +98,19 @@ static struct zwp_pointer_constraints_v1 *pointer_constraints;
 int wl_output_scale_factor = 1;
 int entered_gfx_loop = 0;
 
-// The delay in ms which a key must be held to begin repeating..
-int key_repeat_delay_ms = 500;
-// The number of ms between repeats of a repeating key.
-int key_repeat_ms = 100;
-// The maximum number of ms between repeats of a scroll.
-// This is scaled by the number of repeating scrolls pending.
-int scroll_repeat_ms = 100;
-
-// A pool of xrgb888 buffers used for drawing to the screen.
+// A xrgb888 buffer which is attached to the wl_surface.
 // When drawing, we give ownership of the buffer's memory to the compositor.
 // The compositor notifies us asynchronously when it is done reading the buffer.
 // In the case that we need to draw (rpc_flush) before the buffer is ready,
-// we will need to allocate a whole new buffer to draw to.
-// We use this pool to avoid the need to setup a new shared memory buffer
-// each time this happens.
-#define N_XRGB8888_BUFFERS 3
-struct WaylandBuffer *xrgb8888_buffers[N_XRGB8888_BUFFERS];
+// we mark the changes pending for future draws.
+static struct WaylandBuffer *xrgb8888_buffer = NULL;
+struct change {
+	struct change *next;
+	Rectangle r;
+	char pixels[0];
+};
+// Protected by wayland_lock
+static struct change *pending_changes = NULL;
 
 int wayland_debug = 0;
 
@@ -342,7 +323,47 @@ static const struct wl_data_source_listener wl_data_source_listener = {
 	.cancelled = wl_data_source_cancelled,
 };
 
-void delete_buffer(WaylandBuffer *b) {
+static int next_shm = 0;
+static WaylandBuffer *new_buffer(int w, int h, int format) {
+	int stride = w * 4;
+	int size = stride * h;
+
+	// Create an anonymous shared memory file.
+	char name[128];
+	snprintf(name, 128, "/acme_wl_shm-%d-%d", getpid(), next_shm++);
+	int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+	if (fd < 0) {
+		sysfatal("shm_open failed");
+	}
+	shm_unlink(name);
+
+	// Set the file's size.
+	int ret;
+	do {
+		ret = ftruncate(fd, size);
+	} while (ret < 0 && errno == EINTR);
+	if (ret < 0) {
+		sysfatal("ftruncate failed");
+	}
+
+	char *d = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	if (d == MAP_FAILED) {
+		sysfatal("mmap failed");
+	}
+
+	WaylandBuffer *b = malloc(sizeof(WaylandBuffer));
+	b->w = w;
+	b->h = h;
+	b->size = size;
+	b->data = d;
+	struct wl_shm_pool *p = wl_shm_create_pool(wl_shm, fd, size);
+	b->wl_buffer = wl_shm_pool_create_buffer(p, 0, w, h, stride, format);
+	wl_shm_pool_destroy(p);
+	close(fd);
+	return b;
+}
+
+static void delete_buffer(WaylandBuffer *b) {
 	munmap(b->data, b->size);
 	wl_buffer_destroy(b->wl_buffer);
 	free(b);
@@ -350,19 +371,42 @@ void delete_buffer(WaylandBuffer *b) {
 
 static void wl_buffer_release(void *data, struct wl_buffer *wl_buffer) {
 	qlock(&wayland_lock);
-	if (data == NULL) {
+	if (data == NULL) { // Cursor buffer
 		wl_buffer_destroy(wl_buffer);
 		qunlock(&wayland_lock);
 		return;
 	}
-	for (int i = 0; i < N_XRGB8888_BUFFERS; i++) {
-		if (xrgb8888_buffers[i] == NULL) {
-			xrgb8888_buffers[i] = (WaylandBuffer*) data;
-			qunlock(&wayland_lock);
-			return;
+
+	Client* c = data;
+	WaylandClient *wl = (WaylandClient*) c->view;
+
+	if (pending_changes) {
+		if (wl->current_buffer->wl_buffer != wl_buffer) {
+			sysfatal("current_buffer is %p, but old buffer[%p] is released\n",
+				wl->current_buffer->wl_buffer, wl_buffer);
 		}
-	}
-	delete_buffer((WaylandBuffer*) data);
+		wl_surface_attach(wl->wl_surface, wl_buffer, 0, 0);
+		// Apply pending changes
+		while (pending_changes) {
+			struct change *change = pending_changes;
+			pending_changes = change->next;
+			Rectangle r = change->r;
+			char *p = change->pixels;
+			int stride = Dx(wl->memimage->r) * 4;
+
+			for (int i = 0; i < Dy(r); i++) {
+				int offset = (i + r.min.y)*stride + r.min.x * 4;
+				memcpy(wl->current_buffer->data + offset, p, Dx(r) * 4);
+				p += Dx(r) * 4;
+			}
+			wl_surface_damage_buffer(wl->wl_surface, r.min.x, r.min.y, Dx(r), Dy(r));
+			free(change);
+		}
+		wl_surface_commit(wl->wl_surface);
+	} else {
+		// Give ownership back to us
+		xrgb8888_buffer = wl->current_buffer;
+	};
 	qunlock(&wayland_lock);
 }
 
@@ -399,6 +443,7 @@ void xdg_toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel,
 	width *= wl_output_scale_factor;
 	height *= wl_output_scale_factor;
 	Rectangle r = Rect(0, 0, width, height);
+
 	if (eqrect(r, wl->memimage->r)) {
 		// The size didn't change, so nothing to do.
 		qunlock(&wayland_lock);
@@ -408,6 +453,10 @@ void xdg_toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel,
 	// The size changed, so allocate a new Memimage and notify the client.
 	wl->memimage = _allocmemimage(r, XRGB32);
 	c->mouserect = r;
+
+	delete_buffer(wl->current_buffer);
+	wl->current_buffer = xrgb8888_buffer = new_buffer(width, height, WL_SHM_FORMAT_XRGB8888);
+	wl_buffer_add_listener(xrgb8888_buffer->wl_buffer, &wl_buffer_listener, c);
 
 	qunlock(&wayland_lock);
 	gfx_replacescreenimage(c, wl->memimage);
@@ -423,50 +472,15 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
 	.close = xdg_toplevel_close,
 };
 
-static const struct wl_callback_listener wl_callback_listener;
-
 // The callback is called per-frame.
-// It is currently only used to implement key repeat.
 static void wl_callback_done(void *data, struct wl_callback *wl_callback, uint32_t time) {
 	Client* c = data;
 	WaylandClient *wl = (WaylandClient*) c->view;
 	qlock(&wayland_lock);
 
-	wl_callback_destroy(wl_callback);
-
-	int repeat_rune = 0;
-	if (wl->repeat_rune && time >= wl->repeat_next_ms) {
-		repeat_rune = wl->repeat_rune;
-		wl->repeat_next_ms = time + key_repeat_ms;
-	}
-
-	int x = wl->mouse_x;
-	int y = wl->mouse_y;
-	int repeat_scroll_button = 0;
-	if (wl->repeat_scroll_button && time >= wl->repeat_scroll_next_ms) {
-		repeat_scroll_button = wl->repeat_scroll_button | wl->buttons;
-		wl->repeat_scroll_count--;
-		if (wl->repeat_scroll_count == 0) {
-			wl->repeat_scroll_button = 0;
-		} else {
-			wl->repeat_scroll_next_ms = time + scroll_repeat_ms/wl->repeat_scroll_count;
-		}
-	}
-
-	if (repeat_rune || repeat_scroll_button) {
-		// Request another callback for the next frame.
-		wl_callback = wl_surface_frame(wl->wl_surface);
-		wl_callback_add_listener(wl_callback, &wl_callback_listener, c);
-		wl_surface_commit(wl->wl_surface);
-	}
+	// Nothing to do now
 
 	qunlock(&wayland_lock);
-	if (repeat_rune) {
-		gfx_keystroke(c, repeat_rune);
-	}
-	if (repeat_scroll_button) {
-		gfx_mousetrack(c, x, y, repeat_scroll_button, (uint) time);
-	}
 }
 
 static const struct wl_callback_listener wl_callback_listener = {
@@ -495,7 +509,6 @@ void wl_pointer_leave(void *data, struct wl_pointer *wl_pointer,
 	qlock(&wayland_lock);
 
 	wl->buttons = 0;
-	wl->repeat_scroll_button = 0;
 
 	qunlock(&wayland_lock);
 }
@@ -506,8 +519,6 @@ void wl_pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time,
 	WaylandClient *wl = (WaylandClient*) c->view;
 	qlock(&wayland_lock);
 
-	wl->repeat_scroll_button = 0;
-	wl->repeat_scroll_count = 0;
 	wl->mouse_x = wl_fixed_to_int(surface_x) * wl_output_scale_factor;
 	wl->mouse_y = wl_fixed_to_int(surface_y) * wl_output_scale_factor;
 	int x = wl->mouse_x;
@@ -524,9 +535,6 @@ void wl_pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t seria
 	Client* c = data;
 	WaylandClient *wl = (WaylandClient*) c->view;
 	qlock(&wayland_lock);
-
-	wl->repeat_scroll_button = 0;
-	wl->repeat_scroll_count = 0;
 
 	int mask = 0;
 	switch (button) {
@@ -591,20 +599,12 @@ void wl_pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time,
 
 	int x = wl->mouse_x;
 	int y = wl->mouse_y;
-	wl->repeat_scroll_button = 0;
-	wl->repeat_scroll_count = 0;
 
 	int b = 0;
 	if (value < 0) {
 		b |= 1 << 3;
 	} else if (value > 0) {
 		b |= 1 << 4;
-	}
-	int mag = fabs(value);
-	if (mag > 1) {
-		wl->repeat_scroll_button = b;
-		wl->repeat_scroll_count = mag;
-		wl->repeat_scroll_next_ms = time + scroll_repeat_ms/wl->repeat_scroll_count;
 	}
 	b |= wl->buttons;
 
@@ -663,7 +663,6 @@ void wl_keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
 
 	wl->ctl = 0;
 	wl->alt = 0;
-	wl->repeat_rune = 0;
 
 	qunlock(&wayland_lock);
 }
@@ -673,10 +672,6 @@ void wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
 	Client* c = data;
 	WaylandClient *wl = (WaylandClient*) c->view;
 	qlock(&wayland_lock);
-
-	wl->repeat_rune = 0;
-	wl->repeat_scroll_button = 0;
-	wl->repeat_scroll_count = 0;
 
 	key += 8;	// Add 8 to translate Linux scan code to xkb code.
 	uint32_t rune = xkb_state_key_get_utf32(wl->xkb_state, key);
@@ -790,8 +785,6 @@ void wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
 
 	qunlock(&wayland_lock);
 	if (state == WL_KEYBOARD_KEY_STATE_PRESSED && rune != 0) {
-		wl->repeat_rune = rune;
-		wl->repeat_next_ms = time + key_repeat_delay_ms;
 		gfx_keystroke(c, rune);
 	}
 }
@@ -882,46 +875,6 @@ static void rpc_resizewindow(Client*, Rectangle) {
 	DEBUG("rpc_resizewindow\n");
 }
 
-static int next_shm = 0;
-
-WaylandBuffer *new_buffer(int w, int h, int format) {
-	int stride = w * 4;
-	int size = stride * h;
-
-	// Create an anonymous shared memory file.
-	char name[128];
-	snprintf(name, 128, "/acme_wl_shm-%d-%d", getpid(), next_shm++);
-	int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
-	if (fd < 0) {
-		sysfatal("shm_open failed");
-	}
-	shm_unlink(name);
-
-	// Set the file's size.
-	int ret;
-	do {
-		ret = ftruncate(fd, size);
-	} while (ret < 0 && errno == EINTR);
-	if (ret < 0) {
-		sysfatal("ftruncate failed");
-	}
-
-	char *d = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-	if (d == MAP_FAILED) {
-		sysfatal("mmap failed");
-	}
-
-	WaylandBuffer *b = malloc(sizeof(WaylandBuffer));
-	b->w = w;
-	b->h = h;
-	b->size = size;
-	b->data = d;
-	struct wl_shm_pool *p = wl_shm_create_pool(wl_shm, fd, size);
-	b->wl_buffer = wl_shm_pool_create_buffer(p, 0, w, h, stride, format);
-	wl_shm_pool_destroy(p);
-	close(fd);
-	return b;
-}
 
 void wayland_set_cursor(WaylandClient *wl, Cursor *cursor) {
 	// Convert bitmap to ARGB.
@@ -1017,39 +970,46 @@ static void rpc_bouncemouse(Client*, Mouse) {
 	DEBUG("rpc_bouncemouse\n");
 }
 
-// Must be called with the lock held.
-WaylandBuffer *get_xrgb8888_buffer(int w, int h) {
-	for (int i = 0; i < N_XRGB8888_BUFFERS; i++) {
-		if (xrgb8888_buffers[i] == NULL) {
-			continue;
-		}
-		// Delete any cached buffers that are not the right size.
-		if (xrgb8888_buffers[i]->w != w || xrgb8888_buffers[i]->h != h) {
-			delete_buffer(xrgb8888_buffers[i]);
-			xrgb8888_buffers[i] = NULL;
-			continue;
-		}
-		WaylandBuffer *b = xrgb8888_buffers[i];
-		xrgb8888_buffers[i] = NULL;
-		return b;
-	}
-	WaylandBuffer *b = new_buffer(w, h, WL_SHM_FORMAT_XRGB8888);
-	wl_buffer_add_listener(b->wl_buffer, &wl_buffer_listener, b);
-	return b;
-}
-
 static void rpc_flush(Client *c, Rectangle r) {
 	WaylandClient *wl = (WaylandClient*) c->view;
+	int stride = Dx(wl->memimage->r) * 4;
+	int offset = r.min.y*stride + r.min.x * 4;
 	qlock(&wayland_lock);
 
-	int w = Dx(wl->memimage->r);
-	int h = Dy(wl->memimage->r);
-	WaylandBuffer *b = get_xrgb8888_buffer(w, h);
-	memcpy(b->data, (char*) wl->memimage->data->bdata, b->size);
-	wl_surface_attach(wl->wl_surface, b->wl_buffer, 0, 0);
-	wl_surface_damage_buffer(wl->wl_surface, r.min.x, r.min.y, Dx(r), Dy(r));
-	wl_surface_commit(wl->wl_surface);
-	wl_display_flush(wl_display);
+	if (xrgb8888_buffer) {
+		for (int i = 0; i < Dy(r); i++) {
+			memcpy(xrgb8888_buffer->data + offset, (char *)wl->memimage->data->bdata + offset, Dx(r) * 4);
+			offset += stride;
+		}
+		wl_surface_attach(wl->wl_surface, xrgb8888_buffer->wl_buffer, 0, 0);
+		wl_surface_damage_buffer(wl->wl_surface, r.min.x, r.min.y, Dx(r), Dy(r));
+		wl_surface_commit(wl->wl_surface);
+		wl_display_flush(wl_display);
+		xrgb8888_buffer = NULL;
+	} else {
+		// save the change
+		int pixel_size = Dx(r) * Dy(r) * 4;
+		struct change *change = malloc(sizeof(*change) + pixel_size);
+		if (!change) {
+			sysfatal("oom");
+		}
+		char *pixel = change->pixels;
+		for (int i = 0; i < Dy(r); i++) {
+			memcpy(pixel+(i*Dx(r)*4), (char *)wl->memimage->data->bdata + offset, Dx(r) * 4);
+			offset += stride;
+		}
+		change->r = r;
+		change->next = NULL;
+		if (!pending_changes) {
+			pending_changes = change;
+		} else {
+			struct change *tail = pending_changes;
+			while (tail->next) {
+				tail = tail->next;
+			}
+			tail->next = change;
+		}
+	}
 
 	qunlock(&wayland_lock);
 }
@@ -1083,9 +1043,6 @@ Memimage *rpc_attach(Client *c, char *label, char *winsize) {
 	xdg_toplevel_add_listener(wl->xdg_toplevel, &xdg_toplevel_listener, c);
 	xdg_toplevel_set_title(wl->xdg_toplevel, label);
 
-	wl->wl_callback = wl_surface_frame(wl->wl_surface);
-	wl_callback_add_listener(wl->wl_callback, &wl_callback_listener, c);
-
 	wl->wl_pointer = wl_seat_get_pointer(wl_seat);
 	wl_pointer_add_listener(wl->wl_pointer, &pointer_listener, c);
 	wl->wl_surface_cursor = wl_compositor_create_surface(wl_compositor);
@@ -1112,6 +1069,8 @@ Memimage *rpc_attach(Client *c, char *label, char *winsize) {
 	int h = 480*wl_output_scale_factor;
 	Rectangle r = Rect(0, 0, w, h);
 	wl->memimage = _allocmemimage(r, XRGB32);
+	wl->current_buffer = xrgb8888_buffer = new_buffer(w, h, WL_SHM_FORMAT_XRGB8888);
+	wl_buffer_add_listener(xrgb8888_buffer->wl_buffer, &wl_buffer_listener, c);
 	c->mouserect = r;
 	c->displaydpi = 110 * wl_output_scale_factor;
 	wl_surface_set_buffer_scale(wl->wl_surface, wl_output_scale_factor);
