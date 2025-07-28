@@ -221,8 +221,10 @@ void wl_data_device_listener_selection(void *data,
 
 	if (id == NULL) {
 		qlock(&wayland_lock);
-		free(snarf);
-		snarf = NULL;
+		if (snarf) {
+			free(snarf);
+			snarf = NULL;
+		}
 		qunlock(&wayland_lock);
 		DEBUG("wl_data_device_listener_selection: no data\n");
 		return;
@@ -270,7 +272,9 @@ void wl_data_device_listener_selection(void *data,
 
 	// publish new snarf
 	qlock(&wayland_lock);
-	free(snarf);
+	if (snarf) {
+		free(snarf);
+	}
 	snarf = buff;
 	qunlock(&wayland_lock);
 	close(fds[0]);
@@ -1112,7 +1116,9 @@ void	rpc_putsnarf(char *snarf_in) {
 	DEBUG("rpc_putsnarf\n");
 	qlock(&wayland_lock);
 
-	free(snarf);
+	if (snarf) {
+		free(snarf);
+	}
 	snarf = strdup(snarf_in);
 
 	struct wl_data_source *source =
