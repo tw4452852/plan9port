@@ -483,6 +483,15 @@ void xdg_toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel,
 	wl->current_buffer = xrgb8888_buffer = new_buffer(width, height, WL_SHM_FORMAT_XRGB8888);
 	wl_buffer_add_listener(xrgb8888_buffer->wl_buffer, &wl_buffer_listener, c);
 
+	// Purge any pending old changes
+	while (pending_changes) {
+		struct change *change = pending_changes;
+		pending_changes = change->next;
+
+		free(change->pixels);
+		free(change);
+	}
+
 	qunlock(&wayland_lock);
 	gfx_replacescreenimage(c, wl->memimage);
 }
