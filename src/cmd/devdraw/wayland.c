@@ -21,6 +21,7 @@
 #include "wayland-pointer-constraints.h"
 #include "wayland-xdg-decoration.h"
 #include "wayland-xdg-shell.h"
+#include "wayland-wlr-foreign-toplevel-management-unstable-v1.h"
 
 // alt+click and ctl+click are mapped to mouse buttons
 // to support single button mice.
@@ -90,6 +91,10 @@ uint32_t keyboard_enter_serial;
 // Need to NULL check them before using.
 static struct zxdg_decoration_manager_v1 *decoration_manager;
 static struct zwp_pointer_constraints_v1 *pointer_constraints;
+static struct zwlr_foreign_toplevel_manager_v1 *zwlr_foreign_toplevel_manager;
+
+static struct zwlr_foreign_toplevel_handle_v1 *zwlr_foreign_toplevel_handle;
+static char my_appid[32];
 
 // The wl output scale factor reported by wl_output.
 // We only set it if we get th event before entering the graphics loop.
@@ -150,6 +155,9 @@ static void registry_global(void *data, struct wl_registry *wl_registry,
 	} else if (strcmp(interface, zwp_pointer_constraints_v1_interface.name) == 0) {
 		pointer_constraints = wl_registry_bind(wl_registry, name,
 			&zwp_pointer_constraints_v1_interface, 1);
+	} else if (strcmp(interface, zwlr_foreign_toplevel_manager_v1_interface.name) == 0) {
+		zwlr_foreign_toplevel_manager = wl_registry_bind(wl_registry, name,
+			&zwlr_foreign_toplevel_manager_v1_interface, 1);
 	}
 }
 
@@ -837,6 +845,51 @@ static const struct wl_keyboard_listener keyboard_listener = {
 	.repeat_info = wl_keyboard_repeat_info,
 };
 
+static void noop() {}
+
+static void
+zwlr_foreign_toplevel_handle_v1_handle_app_id(void *user_data,
+	struct zwlr_foreign_toplevel_handle_v1 *toplevel,
+	const char *app_id
+	)
+{
+	if (strcmp(app_id, my_appid) == 0) {
+		zwlr_foreign_toplevel_handle = toplevel;
+	}
+}
+
+static struct zwlr_foreign_toplevel_handle_v1_listener
+zwlr_foreign_toplevel_handle_v1_listener = {
+	.title = noop,
+	.app_id = zwlr_foreign_toplevel_handle_v1_handle_app_id,
+	.output_enter = noop,
+	.output_leave = noop,
+	.state = noop,
+	.done = noop,
+	.closed = noop,
+	.parent = noop,
+};
+
+static void
+zwlr_foreign_toplevel_manager_v1_handle_toplevel(
+	void *data,
+	struct zwlr_foreign_toplevel_manager_v1 *manager,
+	struct zwlr_foreign_toplevel_handle_v1 *toplevel
+	)
+{
+	zwlr_foreign_toplevel_handle_v1_add_listener(
+		toplevel,
+		&zwlr_foreign_toplevel_handle_v1_listener,
+		NULL
+	);
+}
+
+static struct zwlr_foreign_toplevel_manager_v1_listener
+zwlr_foreign_toplevel_manager_v1_listener = {
+	.toplevel = zwlr_foreign_toplevel_manager_v1_handle_toplevel,
+	.finished = noop,
+};
+
 void	gfx_main(void) {
 	DEBUG("gfx_main called\n");
 
@@ -981,6 +1034,12 @@ static void rpc_setmouse(Client *c, Point p) {
 
 static void rpc_topwin(Client*) {
 	DEBUG("rpc_topwin\n");
+
+	if (zwlr_foreign_toplevel_handle) {
+		qlock(&wayland_lock);
+		zwlr_foreign_toplevel_handle_v1_activate(zwlr_foreign_toplevel_handle, wl_seat);
+		qunlock(&wayland_lock);
+	}
 }
 
 static void rpc_bouncemouse(Client*, Mouse) {
@@ -1059,6 +1118,8 @@ Memimage *rpc_attach(Client *c, char *label, char *winsize) {
 	wl->xdg_toplevel = xdg_surface_get_toplevel(wl->xdg_surface);
 	xdg_toplevel_add_listener(wl->xdg_toplevel, &xdg_toplevel_listener, c);
 	xdg_toplevel_set_title(wl->xdg_toplevel, label);
+	snprintf(my_appid, sizeof(my_appid)/sizeof(my_appid[0]), "devdraw-%d", getpid());
+	xdg_toplevel_set_app_id(wl->xdg_toplevel, my_appid);
 
 	wl->wl_pointer = wl_seat_get_pointer(wl_seat);
 	wl_pointer_add_listener(wl->wl_pointer, &pointer_listener, c);
@@ -1079,6 +1140,12 @@ Memimage *rpc_attach(Client *c, char *label, char *winsize) {
 				decoration_manager, wl->xdg_toplevel);
 		zxdg_toplevel_decoration_v1_set_mode(d,
 			ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+	}
+
+	if (zwlr_foreign_toplevel_manager) {
+		zwlr_foreign_toplevel_manager_v1_add_listener(
+			zwlr_foreign_toplevel_manager,
+			&zwlr_foreign_toplevel_manager_v1_listener, NULL);
 	}
 
 	// TODO: parse winsize.
