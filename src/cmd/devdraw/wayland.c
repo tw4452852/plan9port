@@ -488,7 +488,6 @@ void xdg_toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel,
 		struct change *change = pending_changes;
 		pending_changes = change->next;
 
-		free(change->pixels);
 		free(change);
 	}
 
