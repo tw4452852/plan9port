@@ -115,7 +115,7 @@ struct change {
 	char pixels[0];
 };
 // Protected by wayland_lock
-static struct change *pending_changes = NULL;
+static struct change pending_changes_head = { .next = NULL };
 
 int wayland_debug = 0;
 
@@ -405,16 +405,16 @@ static void wl_buffer_release(void *data, struct wl_buffer *wl_buffer) {
 	Client* c = data;
 	WaylandClient *wl = (WaylandClient*) c->view;
 
-	if (pending_changes) {
+	if (pending_changes_head.next) {
 		if (wl->current_buffer->wl_buffer != wl_buffer) {
 			sysfatal("current_buffer is %p, but old buffer[%p] is released\n",
 				wl->current_buffer->wl_buffer, wl_buffer);
 		}
 		wl_surface_attach(wl->wl_surface, wl_buffer, 0, 0);
 		// Apply pending changes
-		while (pending_changes) {
-			struct change *change = pending_changes;
-			pending_changes = change->next;
+		while (pending_changes_head.next) {
+			struct change *change = pending_changes_head.next;
+			pending_changes_head.next = change->next;
 			Rectangle r = change->r;
 			char *p = change->pixels;
 			int stride = Dx(wl->memimage->r) * 4;
@@ -484,9 +484,9 @@ void xdg_toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel,
 	wl_buffer_add_listener(xrgb8888_buffer->wl_buffer, &wl_buffer_listener, c);
 
 	// Purge any pending old changes
-	while (pending_changes) {
-		struct change *change = pending_changes;
-		pending_changes = change->next;
+	while (pending_changes_head.next) {
+		struct change *change = pending_changes_head.next;
+		pending_changes_head.next = change->next;
 
 		free(change);
 	}
@@ -1071,6 +1071,20 @@ static void rpc_flush(Client *c, Rectangle r) {
 		wl_display_flush(wl_display);
 		xrgb8888_buffer = NULL;
 	} else {
+		// Remove any pending changes that will be overwritten by this change
+		if (pending_changes_head.next) {
+			struct change **prev_next = &pending_changes_head.next, *current;
+			while (*prev_next) {
+				current = *prev_next;
+				if (rectinrect(current->r, r)) {
+					*prev_next = current->next;
+					free(current);
+				} else {
+					prev_next = &current->next;
+				}
+			}
+		}
+
 		// save the change
 		int pixel_size = Dx(r) * Dy(r) * 4;
 		struct change *change = malloc(sizeof(*change) + pixel_size);
@@ -1084,15 +1098,12 @@ static void rpc_flush(Client *c, Rectangle r) {
 		}
 		change->r = r;
 		change->next = NULL;
-		if (!pending_changes) {
-			pending_changes = change;
-		} else {
-			struct change *tail = pending_changes;
-			while (tail->next) {
-				tail = tail->next;
-			}
-			tail->next = change;
+
+		struct change **tail_next = &pending_changes_head.next;
+		while (*tail_next) {
+			tail_next = &((*tail_next)->next);
 		}
+		*tail_next = change;
 	}
 
 	qunlock(&wayland_lock);
