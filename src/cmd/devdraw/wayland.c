@@ -326,7 +326,7 @@ void wl_data_source_send(void *data,
 			continue;
 		}
 		if (n < 0) {
-			sysfatal("Write error");
+			break;
 		}
 		p += n;
 		total -= n;
