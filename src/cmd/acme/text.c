@@ -825,11 +825,11 @@ texttype(Text *t, Rune r)
 		}
 		char *cmd = emalloc(256);
 		if (r == (KF|1)) {
-			sprint(cmd, "%s", "gf");
+			sprint(cmd, "gt f");
 		} else if (r == 0x06) {
-			sprint(cmd, "%s", "foot -d error sh -c 'elvish $HOME/MyRoot/scripts/search_in_acme_window.elv'");
+			sprint(cmd, "gt bash -c 'elvish $HOME/MyRoot/scripts/search_in_acme_window.elv'");
 		} else if (r == (KF|12)) {
-			sprint(cmd, "%s", "foot -d error sh -c 'elvish $HOME/MyRoot/scripts/select_acme_windows.elv'");
+			sprint(cmd, "gt bash -c 'elvish $HOME/MyRoot/scripts/select_acme_windows.elv'");
 		}
 		incref(&t->w->ref);
 		run(t->w, cmd, dir.r, dir.nr, TRUE, nil, nil, FALSE);
