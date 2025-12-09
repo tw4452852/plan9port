@@ -50,7 +50,7 @@ drawbar(void)
 	int p;
 	char buf[400], bar[200];
 	static char lastbar[200];
-	static int same_cnt = 0;
+	static int lastn = 0, same_cnt = 0;
 
 	if(n > d || n < 0 || d <= 0)
 		return;
@@ -81,17 +81,21 @@ drawbar(void)
 		return;
 	}
 
-	if(lastp == p && last == i) {
+	if (n == lastn) {
 		if (same_cnt++ == 3) {
 			draw(screen, Rect(rbar.min.x, rbar.min.y, rbar.min.x+i, rbar.max.y),
-			stopped, nil, ZP);
+				stopped, nil, ZP);
 			draw(screen, Rect(rbar.min.x + i, rbar.min.y, rbar.max.x, rbar.max.y),
-			light, nil, ZP);
+				light, nil, ZP);
 			flushimage(display, 1);
 		}
-		return;
 	} else {
+		lastn = n;
 		same_cnt = 0;
+	}
+
+	if(lastp == p && last == i) {
+		return;
 	}
 
 	if(lastp != p){
